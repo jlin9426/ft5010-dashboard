@@ -1,0 +1,9 @@
+streamlit
+pandas
+geopandas
+plotly
+scikit-learn
+numpy
+dash>=2.14
+requests>=2.31
+gunicorn>=21.2
