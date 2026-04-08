@@ -29,7 +29,7 @@ from datetime import datetime, timezone, timedelta
 # =============================================================================
 # 0. GLOBAL STRATEGY STATE (checked by bot each cycle)
 # =============================================================================
-strategy_running = True   # Set to False by Pause button; bot skips orders when False
+strategy_running = False  # Set to True by Start button; bot skips orders when False
 
 # =============================================================================
 # 1. CONFIG
@@ -362,23 +362,24 @@ C = {
     "card":      "#1c2128",
 }
 
-def card(title, value_id, color=C["text"], size="22px"):
+def card(title, value_id, color=C["text"], size="20px", padding="6px 10px",
+         font="monospace"):
     return html.Div([
-        html.P(title, style={"margin": 0, "fontSize": "11px",
+        html.P(title, style={"margin": 0, "fontSize": "10px",
                              "color": C["muted"], "letterSpacing": "0.05em",
                              "textTransform": "uppercase"}),
         html.P(id=value_id, children="—",
                style={"margin": "2px 0 0 0", "fontSize": size,
                       "fontWeight": "700", "color": color,
-                      "fontFamily": "monospace"}),
+                      "fontFamily": font}),
     ], style={"background": C["card"], "border": f"1px solid {C['border']}",
-              "borderRadius": "6px", "padding": "8px 12px"})
+              "borderRadius": "6px", "padding": padding})
 
 app.layout = html.Div(style={
     "background": C["bg"], "fontFamily": "'Segoe UI', sans-serif",
     "color": C["text"],
-    "width": "1920px", "height": "1080px", "overflow": "hidden",
-    "margin": "0 auto", "padding": "14px 20px",
+    "width": "100%", "maxWidth": "1920px", "height": "1080px", "overflow": "hidden",
+    "margin": "0 auto", "padding": "10px 16px",
     "boxSizing": "border-box",
 }, children=[
 
@@ -387,9 +388,7 @@ app.layout = html.Div(style={
 
     # ── Stores ────────────────────────────────────────────────────────────
     dcc.Store(id="kill-confirm-store", data={"confirmed": False}),
-    dcc.Store(id="trading-store", data={"active": True}),
-    dcc.Store(id="sim-store", data={"active": True, "direction": 0,
-                                     "entry_price": None, "entry_time": None}),
+    dcc.Store(id="trading-store", data={"active": False}),
 
     # ══════════════════════════════════════════════════════════════════════
     # HEADER (40px)
@@ -411,17 +410,37 @@ app.layout = html.Div(style={
                                         "fontFamily": "monospace"}),
     ]),
 
+    # ── Strategy Description Card ─────────────────────────────────────────
+    html.Div(style={
+        "background": C["card"], "borderLeft": f"3px solid {C['accent']}",
+        "borderRadius": "4px", "padding": "4px 12px", "marginBottom": "6px",
+        "fontSize": "10px", "color": C["muted"], "lineHeight": "1.4",
+    }, children=[
+        html.Span("Strategy: ", style={"color": C["text"], "fontWeight": "700"}),
+        "Hybrid Trend-Following + Mean-Reversion", html.Br(),
+        html.Span("Trend Regime (ADX > 25): ", style={"color": C["text"], "fontWeight": "600"}),
+        "SMA10/SMA30 crossover + ATR distance filter → Long/Short", html.Br(),
+        html.Span("Range Regime (ADX ≤ 25): ", style={"color": C["text"], "fontWeight": "600"}),
+        "Bollinger Bands mean-reversion → Long/Short", html.Br(),
+        html.Span("Instrument: ", style={"color": C["text"], "fontWeight": "600"}),
+        "EUR/USD  |  ",
+        html.Span("Granularity: ", style={"color": C["text"], "fontWeight": "600"}),
+        "M5  |  ",
+        html.Span("Execution: ", style={"color": C["text"], "fontWeight": "600"}),
+        "OANDA Practice API",
+    ]),
+
     # ══════════════════════════════════════════════════════════════════════
     # SECTION 1 — STRATEGY BACKTEST ANALYSIS (~620px)
     # ══════════════════════════════════════════════════════════════════════
     html.H2("Strategy Backtest Analysis",
             style={"fontSize": "13px", "color": C["muted"],
                    "letterSpacing": "0.08em", "textTransform": "uppercase",
-                   "margin": "0 0 6px 0", "fontWeight": "600"}),
+                   "margin": "0 0 4px 0", "fontWeight": "600"}),
 
     # Time picker row
     html.Div(style={"display": "flex", "alignItems": "center",
-                    "gap": "10px", "marginBottom": "6px"}, children=[
+                    "gap": "10px", "marginBottom": "4px"}, children=[
         html.Span("Start (UTC):", style={"color": C["muted"], "fontSize": "12px"}),
         dcc.Input(id="start-input", type="text", value=DEFAULT_START,
                   placeholder="YYYY-MM-DD HH:MM",
@@ -450,18 +469,18 @@ app.layout = html.Div(style={
     html.Div(id="metrics-row",
              style={"display": "grid",
                     "gridTemplateColumns": "repeat(9, 1fr)",
-                    "gap": "6px", "marginBottom": "6px"}),
+                    "gap": "6px", "marginBottom": "4px"}),
 
     # Charts
     dcc.Graph(id="price-chart",
               config={"displayModeBar": False},
               style={"background": C["panel"],
-                     "borderRadius": "6px", "marginBottom": "6px"}),
+                     "borderRadius": "6px", "marginBottom": "4px"}),
 
     dcc.Graph(id="pnl-chart",
               config={"displayModeBar": False},
               style={"background": C["panel"],
-                     "borderRadius": "6px", "marginBottom": "10px"}),
+                     "borderRadius": "6px", "marginBottom": "6px"}),
 
     # ══════════════════════════════════════════════════════════════════════
     # SECTION 2 — LIVE MONITOR (~380px)
@@ -474,17 +493,27 @@ app.layout = html.Div(style={
                        "letterSpacing": "0.08em", "textTransform": "uppercase",
                        "margin": "0 0 6px 0", "fontWeight": "600"}),
 
-        # Row 1: account cards + position cards (7 columns)
+        # Row 1: account cards + position cards (8 columns)
         html.Div(style={"display": "grid",
-                        "gridTemplateColumns": "repeat(7, 1fr)",
+                        "gridTemplateColumns": "repeat(8, 1fr)",
                         "gap": "8px", "marginBottom": "8px"}, children=[
-            card("Balance (SGD)",       "rt-balance"),
-            card("NAV (Equity)",        "rt-nav",       C["accent"]),
-            card("Margin Used",         "rt-margin-used"),
-            card("Margin Available",    "rt-margin-avail", C["green"]),
-            card("Position",            "rt-position"),
-            card("Signal Reason",       "rt-signal-reason"),
-            card("Unrealized PnL",      "rt-unrealized"),
+            card("Balance (SGD)",       "rt-balance",      font="'Segoe UI', sans-serif"),
+            card("NAV (Equity)",        "rt-nav",          C["accent"], font="'Segoe UI', sans-serif"),
+            card("Margin Used",         "rt-margin-used",  font="'Segoe UI', sans-serif"),
+            card("Margin Available",    "rt-margin-avail", C["green"],  font="'Segoe UI', sans-serif"),
+            card("Position",            "rt-position",     font="'Segoe UI', sans-serif"),
+            card("Signal Reason",       "rt-signal-reason",font="'Segoe UI', sans-serif"),
+            card("Unrealized PnL",      "rt-unrealized",   font="'Segoe UI', sans-serif"),
+            card("Current Drawdown",    "rt-drawdown",     C["red"], font="'Segoe UI', sans-serif"),
+        ]),
+
+        # Row 1b: Live Return vs Benchmark
+        html.Div(style={"display": "grid",
+                        "gridTemplateColumns": "repeat(3, 1fr)",
+                        "gap": "8px", "marginBottom": "6px"}, children=[
+            card("Live Strategy Return", "rt-live-return",  size="16px", padding="4px 10px"),
+            card("Live Benchmark Return","rt-live-bm",      size="16px", padding="4px 10px"),
+            card("Alpha",               "rt-alpha",         size="16px", padding="4px 10px"),
         ]),
 
         # Row 2: buttons + mini chart side by side
@@ -503,50 +532,46 @@ app.layout = html.Div(style={
                                 style={"width": "100%",
                                        "background": C["red"], "color": "white",
                                        "border": "none", "borderRadius": "4px",
-                                       "padding": "8px", "fontSize": "12px",
+                                       "padding": "6px", "fontSize": "12px",
                                        "fontWeight": "700", "cursor": "pointer"}),
                     html.P(id="kill-status", children="",
                            style={"margin": "3px 0 0", "fontSize": "10px",
                                   "color": C["yellow"], "minHeight": "14px"}),
                 ], style={"background": C["card"],
                           "border": f"1px solid {C['red']}30",
-                          "borderRadius": "6px", "padding": "8px"}),
+                          "borderRadius": "6px", "padding": "6px"}),
 
                 # Start/Stop Trading
                 html.Div([
-                    html.Button(id="trading-btn", children="⬛  STOP TRADING",
+                    html.Button(id="trading-btn", children="▶  START TRADING",
                                 n_clicks=0,
                                 style={"width": "100%",
-                                       "background": C["red"], "color": "white",
+                                       "background": C["green"], "color": "#0d1117",
                                        "border": "none", "borderRadius": "4px",
-                                       "padding": "8px", "fontSize": "12px",
+                                       "padding": "6px", "fontSize": "12px",
                                        "fontWeight": "700", "cursor": "pointer"}),
                     html.P(id="trading-status",
-                           children="Trading is ACTIVE — auto-opened on load",
+                           children="Trading STOPPED — click to start",
                            style={"margin": "3px 0 0", "fontSize": "10px",
-                                  "color": C["green"], "minHeight": "14px"}),
+                                  "color": C["yellow"], "minHeight": "14px"}),
                 ], style={"background": C["card"],
-                          "border": f"1px solid {C['green']}30",
-                          "borderRadius": "6px", "padding": "8px"}),
+                          "border": f"1px solid {C['border']}",
+                          "borderRadius": "6px", "padding": "6px"}),
 
-                # Sim info
-                html.P(id="sim-status",
-                       children="Initialising simulated position...",
-                       style={"fontSize": "10px", "color": C["muted"],
-                              "margin": "0", "padding": "4px 8px"}),
             ]),
 
             # Right: mini chart
             dcc.Graph(id="live-mini-chart",
                       config={"displayModeBar": False},
-                      style={"background": C["panel"], "borderRadius": "6px"}),
+                      style={"background": C["panel"], "borderRadius": "6px",
+                             "height": "170px"}),
         ]),
     ]),
 
 ])  # end layout
 
 # =============================================================================
-# 7. CALLBACKS — REAL-TIME PANEL (auto-opens sim on first tick)
+# 7. CALLBACKS — REAL-TIME PANEL (reads live OANDA trades)
 # =============================================================================
 @app.callback(
     Output("header-time",       "children"),
@@ -557,27 +582,61 @@ app.layout = html.Div(style={
     Output("rt-position",       "children"),
     Output("rt-signal-reason",  "children"),
     Output("rt-unrealized",     "children"),
+    Output("rt-drawdown",       "children"),
+    Output("rt-drawdown",       "style"),
+    Output("rt-live-return",    "children"),
+    Output("rt-live-return",    "style"),
+    Output("rt-live-bm",        "children"),
+    Output("rt-live-bm",        "style"),
+    Output("rt-alpha",          "children"),
+    Output("rt-alpha",          "style"),
     Output("live-mini-chart",   "figure"),
-    Output("sim-store",         "data"),
-    Output("sim-status",        "children"),
     Input("refresh-interval",   "n_intervals"),
-    State("sim-store",          "data"),
-    State("trading-store",      "data"),
 )
-def update_realtime(_, sim, trading):
+def update_realtime(_):
     now_str = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
 
+    INITIAL_BALANCE = 100_000.0
+    dd_style_base = {"margin": "2px 0 0 0", "fontSize": "20px",
+                      "fontWeight": "700", "fontFamily": "'Segoe UI', sans-serif"}
+    ret_style_base = {"margin": "2px 0 0 0", "fontSize": "16px",
+                       "fontWeight": "700", "fontFamily": "'Segoe UI', sans-serif"}
+
+    nav_val = None
+    bal_val = None
     try:
         acc = get_account_summary()
-        balance       = f"{float(acc.get('balance',      0)):.2f}"
-        nav           = f"{float(acc.get('NAV',          0)):.2f}"
+        bal_val       = float(acc.get('balance',      0))
+        nav_val       = float(acc.get('NAV',          0))
+        balance       = f"{bal_val:.2f}"
+        nav           = f"{nav_val:.2f}"
         margin_used   = f"{float(acc.get('marginUsed',   0)):.2f}"
         margin_avail  = f"{float(acc.get('marginAvailable', 0)):.2f}"
     except Exception:
         balance = nav = margin_used = margin_avail = "ERR"
 
-    # Fetch recent candles (used for signal + mini chart)
-    latest_price = None
+    # Current Drawdown: (NAV - balance) / balance
+    if nav_val is not None and bal_val and bal_val > 0:
+        dd_pct = (nav_val - bal_val) / bal_val
+        drawdown_str = f"{dd_pct:.4%}"
+        dd_color = C["red"] if dd_pct < 0 else C["green"]
+    else:
+        drawdown_str = "N/A"
+        dd_color = C["muted"]
+    dd_style = {**dd_style_base, "color": dd_color}
+
+    # Live Strategy Return: (NAV - 100000) / 100000
+    if nav_val is not None:
+        strat_ret = (nav_val - INITIAL_BALANCE) / INITIAL_BALANCE
+        live_return_str = f"{strat_ret:.4%}"
+        lr_color = C["green"] if strat_ret >= 0 else C["red"]
+    else:
+        strat_ret = None
+        live_return_str = "N/A"
+        lr_color = C["muted"]
+    lr_style = {**ret_style_base, "color": lr_color}
+
+    # Fetch recent candles (used for signal + mini chart + benchmark)
     df_recent = pd.DataFrame()
     sig, reason = 0, "N/A"
     try:
@@ -585,42 +644,58 @@ def update_realtime(_, sim, trading):
             datetime.now(timezone.utc) - timedelta(hours=2),
             datetime.now(timezone.utc),
         )
-        if not df_recent.empty:
-            latest_price = float(df_recent["Close"].iloc[-1])
         df_ind = compute_indicators(df_recent)
         sig, reason = generate_signal(df_ind.iloc[-1])
     except Exception:
         pass
 
-    # Auto-open sim position on first tick (or if trading active but no entry)
-    is_trading = trading and trading.get("active", True)
-    if is_trading and sim and sim.get("active") and sim.get("entry_price") is None:
-        if latest_price is not None and sig != 0:
-            sim = {
-                "active": True,
-                "direction": sig,
-                "entry_price": latest_price,
-                "entry_time": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
-            }
-
-    # Position & Unrealized PnL
-    if sim and sim.get("active") and sim.get("entry_price") is not None:
-        direction = sim["direction"]
-        entry_px  = sim["entry_price"]
-        dir_label = "SHORT" if direction == -1 else "LONG"
-        position_str = f"{dir_label} (SIM)"
-        if latest_price is not None:
-            raw_pnl = (latest_price - entry_px) * direction
-            unrealized = f"{raw_pnl:.6f}"
-        else:
-            unrealized = "N/A"
-        sim_text = f"SIM {dir_label} @ {entry_px:.5f} ({sim.get('entry_time', '')} UTC)"
+    # Live Benchmark Return: EUR/USD today's open → current
+    bm_ret = None
+    try:
+        today_utc = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+        df_today = fetch_candles_range(today_utc, datetime.now(timezone.utc))
+        if not df_today.empty:
+            open_price = float(df_today["Open"].iloc[0])
+            curr_price = float(df_today["Close"].iloc[-1])
+            bm_ret = (curr_price - open_price) / open_price
+    except Exception:
+        pass
+    if bm_ret is not None:
+        live_bm_str = f"{bm_ret:.4%}"
+        bm_color = C["green"] if bm_ret >= 0 else C["red"]
     else:
-        position_str = "FLAT"
-        unrealized = "0.000000"
-        sim_text = "No simulated position" if is_trading else "Trading stopped"
+        live_bm_str = "N/A"
+        bm_color = C["muted"]
+    bm_style = {**ret_style_base, "color": bm_color}
 
-    # ── Mini chart: last 20 M5 candles ────────────────────────────────────
+    # Alpha
+    if strat_ret is not None and bm_ret is not None:
+        alpha = strat_ret - bm_ret
+        alpha_str = f"{alpha:.4%}"
+        a_color = C["green"] if alpha >= 0 else C["red"]
+    else:
+        alpha_str = "N/A"
+        a_color = C["muted"]
+    alpha_style = {**ret_style_base, "color": a_color}
+
+    # Position & Unrealized PnL from real OANDA trades
+    position_str = "FLAT"
+    unrealized = "0.000000"
+    try:
+        trades = get_open_trades()
+        eur_trades = [t for t in trades if t.get("instrument") == INSTRUMENT]
+        if eur_trades:
+            total_units = sum(float(t.get("currentUnits", 0)) for t in eur_trades)
+            total_upnl  = sum(float(t.get("unrealizedPL", 0)) for t in eur_trades)
+            if total_units > 0:
+                position_str = f"LONG {int(total_units)}"
+            elif total_units < 0:
+                position_str = f"SHORT {int(total_units)}"
+            unrealized = f"{total_upnl:.4f}"
+    except Exception:
+        pass
+
+    # ── Mini chart: last 20 M5 candles (pure price line) ──────────────────
     mini_fig = go.Figure()
     if not df_recent.empty:
         df_tail = df_recent.tail(20)
@@ -628,14 +703,6 @@ def update_realtime(_, sim, trading):
             x=df_tail.index, y=df_tail["Close"],
             name="EUR/USD", line=dict(color=C["accent"], width=2),
         ))
-        if sim and sim.get("active") and sim.get("entry_price") is not None:
-            mini_fig.add_hline(
-                y=sim["entry_price"],
-                line=dict(color=C["red"] if sim["direction"] == -1 else C["green"],
-                          width=2, dash="dash"),
-                annotation_text=f"Entry {sim['entry_price']:.5f}",
-                annotation_font=dict(color=C["text"], size=10),
-            )
     mini_fig.update_layout(
         title=dict(text="EUR/USD Live — Last 20 M5 Bars",
                    font=dict(color=C["text"], size=12)),
@@ -644,96 +711,110 @@ def update_realtime(_, sim, trading):
         xaxis=dict(showgrid=False, color=C["muted"]),
         yaxis=dict(showgrid=True, gridcolor=C["border"], color=C["muted"],
                    tickformat=".5f"),
-        height=200, margin=dict(l=10, r=10, t=30, b=10),
+        height=170, margin=dict(l=10, r=10, t=25, b=20),
         showlegend=False,
     )
 
     return (now_str, balance, nav, margin_used, margin_avail,
-            position_str, reason, unrealized, mini_fig, sim, sim_text)
+            position_str, reason, unrealized,
+            drawdown_str, dd_style,
+            live_return_str, lr_style,
+            live_bm_str, bm_style,
+            alpha_str, alpha_style,
+            mini_fig)
 
 # =============================================================================
-# 8. CALLBACKS — KILL SWITCH (double-confirmation)
+# 8. CALLBACKS — KILL SWITCH + START/STOP TRADING (merged to share outputs)
 # =============================================================================
 @app.callback(
     Output("kill-btn",          "children"),
     Output("kill-btn",          "style"),
     Output("kill-status",       "children"),
     Output("kill-confirm-store","data"),
+    Output("trading-btn",       "children"),
+    Output("trading-btn",       "style"),
+    Output("trading-status",    "children"),
+    Output("trading-store",     "data"),
     Input("kill-btn",           "n_clicks"),
+    Input("trading-btn",        "n_clicks"),
     State("kill-confirm-store", "data"),
+    State("trading-store",      "data"),
     prevent_initial_call=True,
 )
-def kill_switch(n_clicks, store):
-    base_style = {
+def handle_kill_or_trading(kill_clicks, trading_clicks, kill_store, trading_store):
+    global strategy_running
+
+    triggered = ctx.triggered_id
+
+    kill_base = {
         "marginTop": "8px", "width": "100%",
         "border": "none", "borderRadius": "6px",
         "padding": "12px", "fontSize": "0.85rem",
         "fontWeight": "700", "cursor": "pointer",
         "letterSpacing": "0.04em", "color": "white",
     }
-
-    if not store.get("confirmed"):
-        # First click → ask for confirmation
-        return (
-            "⚠️  Confirm? Click Again to Close All",
-            {**base_style, "background": C["yellow"]},
-            "Click once more to execute.",
-            {"confirmed": True},
-        )
-    else:
-        # Second click → execute
-        try:
-            close_all_positions()
-            msg = "✅ All positions closed."
-        except Exception as e:
-            msg = f"❌ Error: {str(e)[:60]}"
-        return (
-            "⬛  CLOSE ALL POSITIONS",
-            {**base_style, "background": C["red"]},
-            msg,
-            {"confirmed": False},
-        )
-
-# =============================================================================
-# 8b. CALLBACKS — START / STOP TRADING
-# =============================================================================
-@app.callback(
-    Output("trading-btn",    "children"),
-    Output("trading-btn",    "style"),
-    Output("trading-status", "children"),
-    Output("trading-store",  "data"),
-    Input("trading-btn",     "n_clicks"),
-    State("trading-store",   "data"),
-    prevent_initial_call=True,
-)
-def toggle_trading(n_clicks, store):
-    global strategy_running
-
-    active = store.get("active", True)
-    base_style = {
+    trade_base = {
         "width": "100%", "border": "none", "borderRadius": "4px",
         "padding": "8px", "fontSize": "12px",
         "fontWeight": "700", "cursor": "pointer",
     }
 
+    # Defaults: keep current trading button state
+    active = trading_store.get("active", False)
     if active:
-        # Currently trading → stop
-        strategy_running = False
-        return (
-            "▶  START TRADING",
-            {**base_style, "background": C["green"], "color": "#0d1117"},
-            "Trading STOPPED — signals recorded but no orders",
-            {"active": False},
-        )
+        t_btn = "⬛  STOP TRADING"
+        t_style = {**trade_base, "background": C["red"], "color": "white"}
+        t_status = "Trading is ACTIVE"
     else:
-        # Currently stopped → start
-        strategy_running = True
-        return (
-            "⬛  STOP TRADING",
-            {**base_style, "background": C["red"], "color": "white"},
-            "Trading is ACTIVE",
-            {"active": True},
-        )
+        t_btn = "▶  START TRADING"
+        t_style = {**trade_base, "background": C["green"], "color": "#0d1117"}
+        t_status = "Trading STOPPED — click to start"
+    t_store = trading_store
+
+    # Defaults: keep current kill button state
+    k_btn = "⬛  CLOSE ALL POSITIONS"
+    k_style = {**kill_base, "background": C["red"]}
+    k_status = dash.no_update
+    k_store = kill_store
+
+    if triggered == "kill-btn":
+        if not kill_store.get("confirmed"):
+            # First click → ask for confirmation
+            k_btn = "⚠️  Confirm? Click Again to Close All"
+            k_style = {**kill_base, "background": C["yellow"]}
+            k_status = "Click once more to execute."
+            k_store = {"confirmed": True}
+        else:
+            # Second click → execute & stop trading
+            try:
+                close_all_positions()
+                k_status = "✅ All positions closed."
+            except Exception as e:
+                k_status = f"❌ Error: {str(e)[:60]}"
+            k_store = {"confirmed": False}
+            # Force stop trading
+            strategy_running = False
+            t_btn = "▶  START TRADING"
+            t_style = {**trade_base, "background": C["green"], "color": "#0d1117"}
+            t_status = "Trading STOPPED by Kill Switch"
+            t_store = {"active": False}
+
+    elif triggered == "trading-btn":
+        if active:
+            strategy_running = False
+            t_btn = "▶  START TRADING"
+            t_style = {**trade_base, "background": C["green"], "color": "#0d1117"}
+            t_status = "Trading STOPPED — signals recorded but no orders"
+            t_store = {"active": False}
+        else:
+            strategy_running = True
+            t_btn = "⬛  STOP TRADING"
+            t_style = {**trade_base, "background": C["red"], "color": "white"}
+            t_status = "Trading is ACTIVE"
+            t_store = {"active": True}
+
+    return (k_btn, k_style, k_status, k_store,
+            t_btn, t_style, t_status, t_store)
 
 # =============================================================================
 # 9. CALLBACKS — INTERVAL ANALYSIS
@@ -899,7 +980,7 @@ def run_analysis(n_clicks, start_str, end_str):
         yaxis=dict(showgrid=True, gridcolor=C["border"], color=C["muted"]),
         legend=dict(bgcolor=C["panel"], bordercolor=C["border"],
                     borderwidth=1, font=dict(size=11)),
-        height=280, margin=dict(l=10, r=10, t=30, b=10),
+        height=260, margin=dict(l=10, r=10, t=30, b=4),
         hovermode="x unified",
     )
 
@@ -928,7 +1009,7 @@ def run_analysis(n_clicks, start_str, end_str):
                    color=C["muted"], tickformat=".5f"),
         legend=dict(bgcolor=C["panel"], bordercolor=C["border"],
                     borderwidth=1, font=dict(size=11)),
-        height=200, margin=dict(l=10, r=10, t=30, b=10),
+        height=180, margin=dict(l=10, r=10, t=30, b=4),
         hovermode="x unified",
     )
 
